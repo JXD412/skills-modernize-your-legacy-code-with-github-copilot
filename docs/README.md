@@ -127,3 +127,57 @@ cobc -x -o account src/cobol/main.cob src/cobol/operations.cob src/cobol/data.co
 - **No input validation** on amounts (see rules 5 and 8).
 - **No persistence**: the balance is reset to 1000.00 on every run.
 - **Unused initial value**: `FINAL-BALANCE` in `operations.cob` has a `VALUE` clause that is never relied upon, since the balance is always read from `DataProgram` first.
+
+## Data Flow
+
+The sequence diagram below shows how a user request moves through the three programs. Each `CALL` passes data by reference, so `BALANCE` in `DataProgram` is the same storage as `FINAL-BALANCE` in `Operations`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Main as main.cob<br/>MainProgram
+    participant Ops as operations.cob<br/>Operations
+    participant Data as data.cob<br/>DataProgram
+
+    loop Until choice is 4
+        Main->>User: Display menu (1-4)
+        User->>Main: ACCEPT USER-CHOICE
+
+        alt Choice 1: View balance
+            Main->>Ops: CALL 'Operations' USING 'TOTAL '
+            Ops->>Data: CALL 'DataProgram' USING 'READ', FINAL-BALANCE
+            Data-->>Ops: BALANCE = STORAGE-BALANCE
+            Ops->>User: Current balance: FINAL-BALANCE
+        else Choice 2: Credit account
+            Main->>Ops: CALL 'Operations' USING 'CREDIT'
+            Ops->>User: Enter credit amount
+            User->>Ops: ACCEPT AMOUNT
+            Ops->>Data: CALL 'DataProgram' USING 'READ', FINAL-BALANCE
+            Data-->>Ops: FINAL-BALANCE = STORAGE-BALANCE
+            Note over Ops: FINAL-BALANCE is increased by AMOUNT
+            Ops->>Data: CALL 'DataProgram' USING 'WRITE', FINAL-BALANCE
+            Note over Data: STORAGE-BALANCE = BALANCE
+            Ops->>User: Amount credited. New balance: FINAL-BALANCE
+        else Choice 3: Debit account
+            Main->>Ops: CALL 'Operations' USING 'DEBIT '
+            Ops->>User: Enter debit amount
+            User->>Ops: ACCEPT AMOUNT
+            Ops->>Data: CALL 'DataProgram' USING 'READ', FINAL-BALANCE
+            Data-->>Ops: FINAL-BALANCE = STORAGE-BALANCE
+            alt FINAL-BALANCE is at least AMOUNT
+                Note over Ops: FINAL-BALANCE is decreased by AMOUNT
+                Ops->>Data: CALL 'DataProgram' USING 'WRITE', FINAL-BALANCE
+                Note over Data: STORAGE-BALANCE = BALANCE
+                Ops->>User: Amount debited. New balance: FINAL-BALANCE
+            else Balance is less than AMOUNT
+                Ops->>User: Insufficient funds for this debit.
+            end
+        else Choice 4: Exit
+            Main->>Main: CONTINUE-FLAG = NO
+        else Any other input
+            Main->>User: Invalid choice, please select 1-4.
+        end
+    end
+    Main->>User: Exiting the program. Goodbye!
+```
